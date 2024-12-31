@@ -1,26 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text.Json;
+﻿using System.Text.Json;
 using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
-using System.Linq;
-using BepInEx.Configuration;
-using System.Collections;
-using BepInEx.Unity.IL2CPP.Utils.Collections;
-using World.SceneObject;
-using World;
-using Fight;
-using World.Configuration;
-using I2.Loc;
 using UnityEngine;
-using TerrainComposer2;
+using World;
+using World.Configuration;
+using World.SceneObject;
 
 namespace UltimateGeneralAmericanRevolutionMod
 {
-    [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
+    [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, "1.2.0")]
     public class Plugin : BasePlugin
     {
         public override void Load()
@@ -40,10 +30,15 @@ namespace UltimateGeneralAmericanRevolutionMod
             UGARPatch.ConstructionMaterial = Config.Bind("1. Cheats", "Add to Construction Material each day", -1, "-1 to disable").Value;
             UGARPatch.Provision = Config.Bind("1. Cheats", "Add to Provisions each day", -1, "-1 to disable").Value;
             UGARPatch.Ammunition = Config.Bind("1. Cheats", "Add to Ammunition each day", -1, "-1 to disable").Value;
+            UGARPatch.Wood = Config.Bind("1. Cheats", "Add to Wood each day", -1, "-1 to disable").Value;
+            UGARPatch.Horse = Config.Bind("1. Cheats", "Add to Horse each day", -1, "-1 to disable").Value;
             UGARPatch.GeneralCommandRadius = Config.Bind("1. Cheats", "Set all general command radius", -1, "-1 to disable. 5000 will cover about the whole map.").Value;
+            UGARPatch.GeneralCommandRadius = Config.Bind("1. Cheats", "Set all general spotting radius", -1, "-1 to disable. 5000 will cover about the whole map.").Value;
             UGARPatch.MaxGeneralStat = Config.Bind("1. Cheats", "Set all generals to max stats", false, "").Value;
             UGARPatch.MaxOfficerStat = Config.Bind("1. Cheats", "Set all officers to max stats", false, "").Value;
             UGARPatch.MaxWeaponInventory = Config.Bind("1. Cheats", "Max Weapons", false, "If weapon/naval cannon inventory is > 0, set to max amount. Will not add weapons that you don't have yet.").Value;
+
+            UGARPatch.NegativeReputationModifier = Config.Bind("1. Cheats", "Negative Reputation Modifier (for all difficulties)", -1, "Modifies the negative reputation modifier that is applied by selected difficulty. 0.75 is very easy").Value;
 
             UGARPatch.ExportWeapons = Config.Bind("2. Weapon Modification", "Export Weapon JSON", true, "If true, will export and overwrite all the weapon json files.").Value;
             UGARPatch.EnableWeaponsModification = Config.Bind("2. Weapon Modification", "Enable Weapon Modification", false, "If true, will read weapon json files and overwrite values in game.").Value;
@@ -60,8 +55,12 @@ namespace UltimateGeneralAmericanRevolutionMod
         public static int ConstructionMaterial { get; set; }
         public static int Provision { get; set; }
         public static int Ammunition { get; set; }
+        public static int Wood { get; set; }
+        public static int Horse { get; set; }
+        public static float NegativeReputationModifier { get; set; }
         public static bool MaxGeneralStat { get; set; }
         public static float GeneralCommandRadius { get; set; }
+        public static float GeneralSpottingRadius { get; set; }
         public static bool MaxOfficerStat { get; set; }
         public static bool MaxWeaponInventory { get; set; }
         public static bool ExportWeapons { get; set; }
@@ -69,6 +68,7 @@ namespace UltimateGeneralAmericanRevolutionMod
 
         [HarmonyPatch(typeof(Country), "DailyUpdate")]
         [HarmonyPostfix]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0051:Remove unused private members", Justification = "<Pending>")]
         private static void Postfix(Country __instance)
         {
             if (SceneManager.instance.PlayerCountry != __instance)
@@ -79,15 +79,25 @@ namespace UltimateGeneralAmericanRevolutionMod
             Log.LogMessage("Setting Daily Update");
             __instance.inventory.money = Money == -1 ? __instance.inventory.money : Money;
             if (ConstructionMaterial > 0)
-                __instance.inventory.itemStorage.Append(new World.CountItem(World.EInventoryType.ConstructionMaterial, 99999f), World.EItemSource.Cheat);
+                __instance.inventory.itemStorage.Append(new World.CountItem(World.EInventoryType.ConstructionMaterial, ConstructionMaterial), World.EItemSource.Cheat);
             if (Provision > 0)
-                __instance.inventory.itemStorage.Append(new World.CountItem(World.EInventoryType.Provision, 99999f), World.EItemSource.Cheat);
+                __instance.inventory.itemStorage.Append(new World.CountItem(World.EInventoryType.Provision, Provision), World.EItemSource.Cheat);
             if (Ammunition > 0)
-                __instance.inventory.itemStorage.Append(new World.CountItem(World.EInventoryType.Ammunition, 99999f), World.EItemSource.Cheat);
+                __instance.inventory.itemStorage.Append(new World.CountItem(World.EInventoryType.Ammunition, Ammunition), World.EItemSource.Cheat);
+            if (Wood > 0)
+                __instance.inventory.itemStorage.Append(new World.CountItem(World.EInventoryType.Wood, Wood), World.EItemSource.Cheat);
+            if (Horse > 0)
+                __instance.inventory.itemStorage.Append(new World.CountItem(World.EInventoryType.Horse, Horse), World.EItemSource.Cheat);
+
             for (int i = 0; i < __instance.armyManager.generals.Count; i++)
             {
                 var general = __instance.armyManager.generals[i];
+                Log.LogMessage($"General Spot: {general.spottingRange}");
                 general.commandRadius = GeneralCommandRadius == -1 ? general.commandRadius : GeneralCommandRadius;
+                general.spottingRange = GeneralSpottingRadius == -1 ? general.spottingRange : GeneralSpottingRadius;
+                general.basicSpottingRange = GeneralSpottingRadius == -1 ? general.basicSpottingRange : GeneralSpottingRadius;
+                general.minSpottingRange = GeneralSpottingRadius == -1 ? general.minSpottingRange : GeneralSpottingRadius;
+                general.UpdateGeneralLOSRanges();
                 if (MaxGeneralStat)
                 {
                     general.PromoteAttribute(EAttribute.Intelligence, 100.0f);
@@ -144,6 +154,157 @@ namespace UltimateGeneralAmericanRevolutionMod
         [HarmonyPostfix]
         private static void Postfix_WeaponConfig2(GameConfig __result)
         {
+            foreach (var diff in __result.difficultyConfig.difficultySettings)
+            {
+                diff.reputationModifier = NegativeReputationModifier == -1 ? diff.reputationModifier : NegativeReputationModifier;
+            }
+            
+            foreach (var cannon in __result.weapons.shipGuns) // these are ships models
+            {
+            }
+            foreach (var cannon in __result.weapons.cannonGuns) // ship guns
+            {
+                string folder = "./bepinex/config/ship_cannons/";
+                string file = $"{cannon.name}.json";
+                if (ExportWeapons)
+                {
+                    var ballistics = new CannonBallistic()
+                    {
+                        baseY = cannon.ballistics.baseY,
+                        explosionMoraleImpactRadius = cannon.ballistics.explosionMoraleImpactRadius,
+                        distance = cannon.ballistics.distance,
+                        explosionRadius = cannon.ballistics.explosionRadius,
+                        farAngle = cannon.ballistics.farAngle,
+                        gravity = cannon.ballistics.gravity,
+                        horizontalSpread = cannon.ballistics.horizontalSpread,
+                        mass = cannon.ballistics.mass,
+                        radius = cannon.ballistics.radius,
+                        scaledDistance = cannon.ballistics.scaledDistance,
+                        scaledGravity = cannon.ballistics.scaledGravity,
+                        time = cannon.ballistics.time,
+                        velocity = cannon.ballistics.velocity,
+                        verticalSpread = cannon.ballistics.verticalSpread,
+                    };
+                    var cannonTemplate = new CannonModuleEx()
+                    {
+                        name = cannon.name,
+                        allowCollect = cannon.allowCollect,
+                        ballistics = ballistics,
+                        crew = cannon.crew,
+                        groundBatterySize = cannon.groundBatterySize,
+                        horizontalTurnMax = cannon.horizontalTurnMax,
+                        navalBatterySize = cannon.navalBatterySize,
+                        realReloadTime = cannon.realReloadTime,
+                        reloadTime = cannon.reloadTime,
+                        threat = cannon.threat,
+                        verticalTurnMax = cannon.verticalTurnMax,
+                        verticalTurnMin = cannon.verticalTurnMin,
+                        weight = cannon.weight,
+                    };
+                    var json = System.Text.Json.JsonSerializer.Serialize(cannonTemplate, new JsonSerializerOptions() { WriteIndented = true });
+                    if (!Directory.Exists(folder))
+                        Directory.CreateDirectory(folder);
+                    File.WriteAllText($"{folder}{file}", json);
+                }
+                if (EnableWeaponsModification)
+                {
+                    if (!File.Exists($"{folder}{file}"))
+                        continue;
+                    Log.LogInfo($"Modifying weapon data for {cannon.name}");
+                    var filetext = File.ReadAllText($"{folder}{file}");
+                    var template = JsonSerializer.Deserialize<CannonModuleEx>(filetext);
+
+                    cannon.ballistics.baseY = template.ballistics.baseY;
+                    cannon.ballistics.distance = template.ballistics.distance;
+                    cannon.ballistics.explosionMoraleImpactRadius = template.ballistics.explosionMoraleImpactRadius;
+                    cannon.ballistics.explosionRadius = template.ballistics.explosionRadius;
+                    cannon.ballistics.farAngle = template.ballistics.farAngle;
+                    cannon.ballistics.gravity = template.ballistics.gravity;
+                    cannon.ballistics.horizontalSpread = template.ballistics.horizontalSpread;
+                    cannon.ballistics.mass = template.ballistics.mass;
+                    cannon.ballistics.radius = template.ballistics.radius;
+                    cannon.ballistics.scaledDistance = template.ballistics.scaledDistance;
+                    cannon.ballistics.scaledGravity = template.ballistics.scaledGravity;
+                    cannon.ballistics.time = template.ballistics.time;
+                    cannon.ballistics.velocity = template.ballistics.velocity;
+                    cannon.ballistics.verticalSpread = template.ballistics.verticalSpread;
+                    cannon.allowCollect = template.allowCollect;
+                    cannon.crew = template.crew;
+                    cannon.groundBatterySize = template.groundBatterySize;
+                    cannon.horizontalTurnMax = template.horizontalTurnMax;
+                    cannon.navalBatterySize = template.navalBatterySize;
+                    cannon.realReloadTime = template.realReloadTime;
+                    cannon.reloadTime = template.reloadTime;
+                    cannon.threat = template.threat;
+                    cannon.verticalTurnMax = template.verticalTurnMax;
+                    cannon.verticalTurnMin = template.verticalTurnMin;
+                    cannon.weight = template.weight;
+                }
+            }
+            foreach (var weapon in __result.weapons.landGuns)
+            {
+                string folder = "./bepinex/config/land_cannons/";
+                string file = $"{weapon.name}.json";
+                if (ExportWeapons)
+                {
+                    Log.LogInfo("Exporting weapon json data");
+                    var weaponTemplateEx = new WeaponTemplateEx()
+                    {
+                        name = weapon.name,
+                        effectiveRange = weapon.effectiveRange,
+                        ammoCost = weapon.ammoCost,
+                        baseReload = weapon.baseReload,
+                        damage = weapon.damage,
+                        damageDegradation = weapon.damageDegradation.keys.Select(y => y.m_Value).ToArray(),
+                        meleeDamage = weapon.meleeDamage,
+                        numberOfShots = weapon.numberOfShots,
+                        price = weapon.price,
+                        productionCost = weapon.productionCost,
+                        randLow = weapon.randLow,
+                        randHi = weapon.randHi,
+                        speedModifier = weapon.speedModifier,
+                        collateralRadius = weapon.collateralRadius,
+                        altitude = weapon.altitude,
+                        allowCollect = weapon.allowCollect,
+                        cannonRequiredStaff = weapon.cannonRequiredStaff,
+                    };
+                    var json = System.Text.Json.JsonSerializer.Serialize(weaponTemplateEx, new JsonSerializerOptions() { WriteIndented = true });
+                    if (!Directory.Exists(folder))
+                        Directory.CreateDirectory(folder);
+                    File.WriteAllText($"{folder}{file}", json);
+                }
+                if (EnableWeaponsModification)
+                {
+                    if (!File.Exists($"{folder}{file}"))
+                        continue;
+                    Log.LogInfo($"Modifying weapon data for {weapon.name}");
+                    var filetext = File.ReadAllText($"{folder}{file}");
+                    var template = JsonSerializer.Deserialize<WeaponTemplateEx>(filetext);
+                    weapon.effectiveRange = template.effectiveRange;
+                    weapon.ammoCost = template.ammoCost;
+                    weapon.baseReload = template.baseReload;
+                    weapon.damage = template.damage;
+                    weapon.collateralRadius = template.collateralRadius;
+                    weapon.meleeDamage = template.meleeDamage;
+                    weapon.numberOfShots = template.numberOfShots;
+                    weapon.price = template.price;
+                    weapon.productionCost = template.productionCost;
+                    weapon.randLow = template.randLow;
+                    weapon.randHi = template.randHi;
+                    weapon.speedModifier = template.speedModifier;
+                    weapon.altitude = template.altitude;
+                    weapon.allowCollect = template.allowCollect;
+                    weapon.cannonRequiredStaff = template.cannonRequiredStaff;
+                    var keys = new Keyframe[weapon.damageDegradation.keys.Count];
+                    for (int i = 0; i < weapon.damageDegradation.keys.Count; i++)
+                    {
+                        var keyframe = weapon.damageDegradation.keys[i];
+                        keyframe.m_Value = template.damageDegradation[i];
+                        keys[i] = keyframe;
+                    }
+                    weapon.damageDegradation.SetKeys(keys);
+                }
+            }
             foreach (var weapon in __result.weapons.firearms)
             {
                 string folder = "./bepinex/config/weapons/";
@@ -178,6 +339,8 @@ namespace UltimateGeneralAmericanRevolutionMod
                 }
                 if (EnableWeaponsModification)
                 {
+                    if (!File.Exists($"{folder}{file}"))
+                        continue;
                     Log.LogInfo($"Modifying weapon data for {weapon.name}");
                     var filetext = File.ReadAllText($"{folder}{file}");
                     var template = JsonSerializer.Deserialize<WeaponTemplateEx>(filetext);
@@ -228,5 +391,39 @@ namespace UltimateGeneralAmericanRevolutionMod
         public float altitude { get; set; }
         public bool allowCollect { get; set; }
         public int cannonRequiredStaff { get; set; }
+    }
+
+    public class CannonModuleEx
+    {
+        public string name { get; set; }
+        public bool allowCollect { get; set; }
+        public CannonBallistic ballistics { get; set; }
+        public float crew { get; set; }
+        public float groundBatterySize { get; set; }
+        public float horizontalTurnMax { get; set; }
+        public float navalBatterySize { get; set; }
+        public float realReloadTime { get; set; }
+        public float reloadTime { get; set; }
+        public float threat { get; set; }
+        public float verticalTurnMax { get; set; }
+        public float verticalTurnMin { get; set; }
+        public float weight { get; set; }
+    }
+    public class CannonBallistic
+    {
+        public float baseY { get; set; }
+        public float distance { get; set; }
+        public float explosionMoraleImpactRadius { get; set; }
+        public float explosionRadius { get; set; }
+        public float farAngle { get; set; }
+        public float gravity { get; set; }
+        public float horizontalSpread { get; set; }
+        public float mass { get; set; }
+        public float radius { get; set; }
+        public float scaledDistance { get; set; }
+        public float scaledGravity { get; set; }
+        public float time { get; set; }
+        public float velocity { get; set; }
+        public float verticalSpread { get; set; }
     }
 }
