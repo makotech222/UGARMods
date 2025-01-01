@@ -10,7 +10,7 @@ using World.SceneObject;
 
 namespace UltimateGeneralAmericanRevolutionMod
 {
-    [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, "1.2.0")]
+    [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, "1.3.0")]
     public class Plugin : BasePlugin
     {
         public override void Load()
@@ -32,13 +32,17 @@ namespace UltimateGeneralAmericanRevolutionMod
             UGARPatch.Ammunition = Config.Bind("1. Cheats", "Add to Ammunition each day", -1, "-1 to disable").Value;
             UGARPatch.Wood = Config.Bind("1. Cheats", "Add to Wood each day", -1, "-1 to disable").Value;
             UGARPatch.Horse = Config.Bind("1. Cheats", "Add to Horse each day", -1, "-1 to disable").Value;
-            UGARPatch.GeneralCommandRadius = Config.Bind("1. Cheats", "Set all general command radius", -1, "-1 to disable. 5000 will cover about the whole map.").Value;
-            UGARPatch.GeneralCommandRadius = Config.Bind("1. Cheats", "Set all general spotting radius", -1, "-1 to disable. 5000 will cover about the whole map.").Value;
+            UGARPatch.GeneralCommandRadius = Config.Bind("1. Cheats", "Set all general command radius", -1f, "-1 to disable. 5000 will cover about the whole map.").Value;
+            UGARPatch.GeneralSpottingRadius = Config.Bind("1. Cheats", "Set all general spotting radius", -1f, "-1 to disable. 5000 will cover about the whole map.").Value;
             UGARPatch.MaxGeneralStat = Config.Bind("1. Cheats", "Set all generals to max stats", false, "").Value;
             UGARPatch.MaxOfficerStat = Config.Bind("1. Cheats", "Set all officers to max stats", false, "").Value;
             UGARPatch.MaxWeaponInventory = Config.Bind("1. Cheats", "Max Weapons", false, "If weapon/naval cannon inventory is > 0, set to max amount. Will not add weapons that you don't have yet.").Value;
 
-            UGARPatch.NegativeReputationModifier = Config.Bind("1. Cheats", "Negative Reputation Modifier (for all difficulties)", -1, "Modifies the negative reputation modifier that is applied by selected difficulty. 0.75 is very easy").Value;
+            UGARPatch.Difficulty_NegativeReputationModifier = Config.Bind("1. Cheats", "Negative Reputation Modifier (for all difficulties)", -1f, "Modifies the negative reputation modifier that is applied by selected difficulty. 0.75 is very easy").Value;
+            UGARPatch.Difficulty_MiningBonus = Config.Bind("1. Cheats", "Mining Bonus (for all difficulties)", -1f, "Modifies the mining bonus that is applied by selected difficulty.").Value;
+            UGARPatch.Difficulty_NavalMaintenance = Config.Bind("1. Cheats", "Ship Maintenance Modifier (for all difficulties)", -1f, "Modifies the ship maintenance modifier that is applied by selected difficulty.").Value;
+            UGARPatch.Difficulty_RecruitsModifier = Config.Bind("1. Cheats", "Recruits Modifier (for all difficulties)", -1f, "Modifies the recruits modifier that is applied by selected difficulty.").Value;
+            UGARPatch.Difficulty_SpecialistBonus = Config.Bind("1. Cheats", "Specialist Bonus Modifier (for all difficulties)", -1f, "Modifies the specialist bonus modifier that is applied by selected difficulty.").Value;
 
             UGARPatch.ExportWeapons = Config.Bind("2. Weapon Modification", "Export Weapon JSON", true, "If true, will export and overwrite all the weapon json files.").Value;
             UGARPatch.EnableWeaponsModification = Config.Bind("2. Weapon Modification", "Enable Weapon Modification", false, "If true, will read weapon json files and overwrite values in game.").Value;
@@ -57,7 +61,11 @@ namespace UltimateGeneralAmericanRevolutionMod
         public static int Ammunition { get; set; }
         public static int Wood { get; set; }
         public static int Horse { get; set; }
-        public static float NegativeReputationModifier { get; set; }
+        public static float Difficulty_NegativeReputationModifier { get; set; }
+        public static float Difficulty_MiningBonus { get; set; }
+        public static float Difficulty_NavalMaintenance { get; set; }
+        public static float Difficulty_RecruitsModifier { get; set; }
+        public static float Difficulty_SpecialistBonus { get; set; }
         public static bool MaxGeneralStat { get; set; }
         public static float GeneralCommandRadius { get; set; }
         public static float GeneralSpottingRadius { get; set; }
@@ -93,10 +101,10 @@ namespace UltimateGeneralAmericanRevolutionMod
             {
                 var general = __instance.armyManager.generals[i];
                 Log.LogMessage($"General Spot: {general.spottingRange}");
-                general.commandRadius = GeneralCommandRadius == -1 ? general.commandRadius : GeneralCommandRadius;
-                general.spottingRange = GeneralSpottingRadius == -1 ? general.spottingRange : GeneralSpottingRadius;
-                general.basicSpottingRange = GeneralSpottingRadius == -1 ? general.basicSpottingRange : GeneralSpottingRadius;
-                general.minSpottingRange = GeneralSpottingRadius == -1 ? general.minSpottingRange : GeneralSpottingRadius;
+                general.commandRadius = GeneralCommandRadius == -1f ? general.commandRadius : GeneralCommandRadius;
+                general.spottingRange = GeneralSpottingRadius == -1f ? general.spottingRange : GeneralSpottingRadius;
+                general.basicSpottingRange = GeneralSpottingRadius == -1f ? general.basicSpottingRange : GeneralSpottingRadius;
+                general.minSpottingRange = GeneralSpottingRadius == -1f ? general.minSpottingRange : GeneralSpottingRadius;
                 general.UpdateGeneralLOSRanges();
                 if (MaxGeneralStat)
                 {
@@ -152,13 +160,21 @@ namespace UltimateGeneralAmericanRevolutionMod
         [HarmonyPatch("Load")]
         [HarmonyPatch(MethodType.Normal)]
         [HarmonyPostfix]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0051:Remove unused private members", Justification = "<Pending>")]
         private static void Postfix_WeaponConfig2(GameConfig __result)
         {
-            foreach (var diff in __result.difficultyConfig.difficultySettings)
+            var diffSettings = __result.difficultyConfig.difficultySettings.ToArray();
+            foreach (var diff in diffSettings)
             {
-                diff.reputationModifier = NegativeReputationModifier == -1 ? diff.reputationModifier : NegativeReputationModifier;
+                diff.reputationModifier = Difficulty_NegativeReputationModifier == -1f ? diff.reputationModifier : Difficulty_NegativeReputationModifier;
+                diff.resourcesBonusProduction = Difficulty_MiningBonus == -1f ? diff.resourcesBonusProduction : Difficulty_MiningBonus;
+                diff.shipMaintenanceMultiplier = Difficulty_NavalMaintenance == -1f ? diff.shipMaintenanceMultiplier : Difficulty_NavalMaintenance;
+                diff.recruitsModifier = Difficulty_RecruitsModifier == -1f ? diff.recruitsModifier : Difficulty_RecruitsModifier;
+                diff.specialistBonusProduction = Difficulty_SpecialistBonus == -1f ? diff.specialistBonusProduction : Difficulty_SpecialistBonus;
             }
-            
+            __result.difficultyConfig.difficultySettings = diffSettings;
+
+
             foreach (var cannon in __result.weapons.shipGuns) // these are ships models
             {
             }
